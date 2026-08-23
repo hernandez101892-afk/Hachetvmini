@@ -75,7 +75,6 @@
     </div>
 
     <script>
-        // Muestra cualquier error de JavaScript directamente en la pantalla de la Mini App
         window.onerror = function(message, source, lineno, colno, error) {
             const debugBox = document.getElementById("debug-box");
             debugBox.style.display = "block";
@@ -86,46 +85,51 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
+        // Enlace físico directo a tu archivo M3U en Internet Archive
         const rawM3uUrl = "https://ia801802.us.archive.org/31/items/hachetv-peliculas/peliculas_archive.m3u";
+        
+        // Lista de proxies de contingencia para evadir CORS y bloqueos de seguridad de forma automatizada
+        const proxyList = [
+            (url) => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
+            (url) => "https://corsproxy.io/?" + encodeURIComponent(url),
+            (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+            (url) => url // Intento directo final
+        ];
+
         const grid = document.getElementById("catalog-grid");
         const player = document.getElementById("video-player");
         const debugBox = document.getElementById("debug-box");
 
-        // Motor de consulta JSONP para saltar de forma definitiva el bloqueo CORS/403
-        function fetchWithJsonp(url) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'allorigins_' + Math.round(100000 * Math.random());
+        // Intenta descargar el catálogo recorriendo los proxies de seguridad uno por uno
+        async function fetchPlaylistWithFallback() {
+            let lastError = null;
+            
+            for (let i = 0; i < proxyList.length; i++) {
+                const proxyFn = proxyList[i];
+                const targetUrl = proxyFn(rawM3uUrl);
+                console.log(`Intentando conectar mediante nodo de seguridad ${i + 1}...`);
                 
-                // Definir la función global temporal para recibir los datos
-                window[callbackName] = function(data) {
-                    delete window[callbackName];
-                    document.body.removeChild(script);
-                    resolve(data.contents);
-                };
-
-                const script = document.createElement('script');
-                // AllOrigins nos empaqueta el archivo de texto M3U dentro de una llamada JavaScript
-                script.src = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&callback=${callbackName}`;
-                
-                script.onerror = () => {
-                    delete window[callbackName];
-                    document.body.removeChild(script);
-                    reject(new Error("La conexión de seguridad JSONP ha fallado."));
-                };
-
-                document.body.appendChild(script);
-            });
+                try {
+                    const response = await fetch(targetUrl);
+                    if (response.ok) {
+                        const text = await response.text();
+                        if (text && text.includes("#EXTM3U")) {
+                            console.log(`¡Conectado con éxito a través del nodo ${i + 1}!`);
+                            return text;
+                        }
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                } catch (err) {
+                    console.warn(`Nodo de seguridad ${i + 1} bloqueado o inactivo:`, err.message);
+                    lastError = err;
+                }
+            }
+            throw new Error("Todos los nodos de seguridad HTTPS para evadir el bloqueo del navegador han fallado.");
         }
 
         async function loadIPTV() {
             try {
-                // Hacer la llamada segura usando JSONP
-                const text = await fetchWithJsonp(rawM3uUrl);
-                
-                if (!text || !text.includes("#EXTM3U")) {
-                    throw new Error("El archivo no tiene el formato de lista M3U o está vacío.");
-                }
-
+                const text = await fetchPlaylistWithFallback();
                 const lines = text.split("\n");
                 grid.innerHTML = ""; // Quitar el texto de cargando
                 
@@ -156,7 +160,7 @@
 
             } catch (err) {
                 debugBox.style.display = "block";
-                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Asegúrate de que el bot haya subido el archivo a Internet Archive con éxito.`;
+                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Los firewalls de red están bloqueando el acceso CORS. Recarga la página con <b>Ctrl + F5</b> en Edge para reintentar la conexión.`;
                 document.getElementById("loading-text").innerText = "Fallo en la conexión.";
             }
         }
