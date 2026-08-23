@@ -46,12 +46,13 @@
             background-color: #2c1515;
             border: 1px solid #ff4444;
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 15px;
             font-family: monospace;
             font-size: 0.8rem;
             color: #ff9999;
             display: none;
+            white-space: pre-wrap;
             word-break: break-all;
         }
     </style>
@@ -78,7 +79,7 @@
         window.onerror = function(message, source, lineno, colno, error) {
             const debugBox = document.getElementById("debug-box");
             debugBox.style.display = "block";
-            debugBox.innerHTML = `🚨 <b>Error de código:</b> ${message}<br>En línea: ${lineno}`;
+            debugBox.innerHTML = `🚨 <b>Error crítico de código:</b> ${message}<br>En línea: ${lineno}`;
             return false;
         };
 
@@ -88,19 +89,18 @@
         // Enlace físico directo a tu archivo M3U en Internet Archive
         const rawM3uUrl = "https://ia801802.us.archive.org/31/items/hachetv-peliculas/peliculas_archive.m3u";
         
-        // Lista de proxies de contingencia para evadir CORS y bloqueos de seguridad de forma automatizada
+        // Lista de proxies de contingencia para máxima estabilidad
         const proxyList = [
             (url) => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
             (url) => "https://corsproxy.io/?" + encodeURIComponent(url),
             (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
-            (url) => url // Intento directo final
+            (url) => url // Intento directo
         ];
 
         const grid = document.getElementById("catalog-grid");
         const player = document.getElementById("video-player");
         const debugBox = document.getElementById("debug-box");
 
-        // Intenta descargar el catálogo recorriendo los proxies de seguridad uno por uno
         async function fetchPlaylistWithFallback() {
             let lastError = null;
             
@@ -113,7 +113,7 @@
                     const response = await fetch(targetUrl);
                     if (response.ok) {
                         const text = await response.text();
-                        if (text && text.includes("#EXTM3U")) {
+                        if (text && text.trim().length > 0) {
                             console.log(`¡Conectado con éxito a través del nodo ${i + 1}!`);
                             return text;
                         }
@@ -124,12 +124,20 @@
                     lastError = err;
                 }
             }
-            throw new Error("Todos los nodos de seguridad HTTPS para evadir el bloqueo del navegador han fallado.");
+            throw new Error("No se pudo establecer conexión con ninguno de los nodos de seguridad HTTPS.");
         }
 
         async function loadIPTV() {
             try {
                 const text = await fetchPlaylistWithFallback();
+                
+                // Validación estricta del encabezado M3U
+                if (!text.includes("#EXTM3U")) {
+                    // Si no es un M3U válido, mostramos los primeros 300 caracteres para diagnosticar qué es
+                    const preview = text.substring(0, 300).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    throw new Error(`El archivo descargado no es una lista IPTV válida.\n\nContenido recibido (Primeros 300 caracteres):\n"${preview}"`);
+                }
+
                 const lines = text.split("\n");
                 grid.innerHTML = ""; // Quitar el texto de cargando
                 
@@ -155,12 +163,12 @@
                 }
 
                 if (count === 0) {
-                    grid.innerHTML = `<p style="grid-column: span 2; text-align: center; color: #ffcc00; font-family: monospace;">⚠️ Tu lista M3U está vacía en Archive o no tiene películas asociadas.</p>`;
+                    grid.innerHTML = `<p style="grid-column: span 2; text-align: center; color: #ffcc00; font-family: monospace;">⚠️ Tu lista M3U está vacía en Archive o no tiene películas con el formato correcto.</p>`;
                 }
 
             } catch (err) {
                 debugBox.style.display = "block";
-                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Los firewalls de red están bloqueando el acceso CORS. Recarga la página con <b>Ctrl + F5</b> en Edge para reintentar la conexión.`;
+                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b><br><br>${err.message.replace(/\n/g, "<br>")}`;
                 document.getElementById("loading-text").innerText = "Fallo en la conexión.";
             }
         }
