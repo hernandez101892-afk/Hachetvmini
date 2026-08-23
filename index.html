@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hachetv IPTV Player</title>
+    <!-- Librería oficial de Telegram Mini Apps -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Hls.js para asegurar reproducción fluida de streaming -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 10px;
+        }
+        h1 { font-size: 1.5rem; text-align: center; color: #58a6ff; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+            text-align: center;
+            cursor: pointer;
+        }
+        .card img { width: 100%; height: auto; display: block; }
+        .card-title { padding: 8px; font-size: 0.9rem; font-weight: bold; }
+        video {
+            width: 100%;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: none;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🍿 Mi Cine en Casa IPTV</h1>
+    
+    <!-- Reproductor de Video principal -->
+    <video id="video-player" controls></video>
+
+    <!-- Grid de Películas -->
+    <div id="catalog-grid" class="grid">
+        <p style="grid-column: span 2; text-align: center;">Cargando películas desde la nube...</p>
+    </div>
+
+    <script>
+        // Inicializar Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Abre la Mini App en pantalla completa automáticamente
+
+        const playlistUrl = "https://archive.org/download/hachetv-peliculas/peliculas_archive.m3u";
+        const grid = document.getElementById("catalog-grid");
+        const player = document.getElementById("video-player");
+
+        // Función para parsear tu lista M3U generada por el bot
+        async function loadIPTV() {
+            try {
+                const response = await fetch(playlistUrl);
+                const text = await response.text();
+                const lines = text.split("\n");
+                
+                grid.innerHTML = ""; // Limpiar cargando...
+                
+                let currentItem = {};
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (line.startsWith("#EXTINF:")) {
+                        // Extraer logo de TMDB
+                        const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                        const logo = logoMatch ? logoMatch[1] : "https://via.placeholder.com/500x750?text=Sin+Portada";
+                        
+                        // Extraer Nombre de la película
+                        const commaIndex = line.lastIndexOf(",");
+                        const title = commaIndex !== -1 ? line.substring(commaIndex + 1) : "Película sin título";
+                        
+                        currentItem = { title, logo };
+                    } else if (line.startsWith("http")) {
+                        currentItem.url = line;
+                        createMovieCard(currentItem);
+                    }
+                }
+            } catch (err) {
+                grid.innerHTML = `<p style="grid-column: span 2; color: #ff7b72;">Fallo al cargar catálogo: ${err.message}</p>`;
+            }
+        }
+
+        // Crear las tarjetas visuales de las películas
+        function createMovieCard(movie) {
+            const card = document.createElement("div");
+            card.className = "card";
+            card.innerHTML = `
+                <img src="${movie.logo}" alt="${movie.title}">
+                <div class="card-title">${movie.title}</div>
+            `;
+            card.onclick = () => playMovie(movie.url);
+            grid.appendChild(card);
+        }
+
+        // Función para reproducir el video en el player web
+        function playMovie(url) {
+            player.style.display = "block";
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            if (Hls.isSupported() && url.endsWith(".m3u8")) {
+                const hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(player);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    player.play();
+                });
+            } else {
+                // Para MP4 directo de Internet Archive
+                player.src = url;
+                player.play();
+            }
+        }
+
+        // Cargar al iniciar
+        loadIPTV();
+    </script>
+</body>
+</html>
