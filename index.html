@@ -4,35 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hachetv IPTV Player</title>
-    <!-- Librería oficial de Telegram Mini Apps -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Hls.js para asegurar reproducción fluida de streaming -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         body {
-            background-color: #0d1117;
+            background-color: #0a0e14;
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
-            padding: 10px;
+            padding: 15px;
         }
-        h1 { font-size: 1.5rem; text-align: center; color: #58a6ff; }
+        h1 { font-size: 1.4rem; text-align: center; color: #bc34fa; text-shadow: 0 0 10px #bc34fa; margin-bottom: 5px; }
+        .subtitle { text-align: center; font-size: 0.8rem; color: #00f0ff; margin-bottom: 20px; font-family: monospace; }
         .grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin-top: 15px;
+            gap: 12px;
         }
         .card {
-            background-color: #161b22;
-            border: 1px solid #30363d;
+            background-color: #101520;
+            border: 1px solid #1f293d;
             border-radius: 12px;
             overflow: hidden;
             text-align: center;
             cursor: pointer;
+            transition: transform 0.2s;
         }
-        .card img { width: 100%; height: auto; display: block; }
-        .card-title { padding: 8px; font-size: 0.9rem; font-weight: bold; }
+        .card:active {
+            transform: scale(0.95);
+        }
+        .card img { width: 100%; height: auto; display: block; background: #1a1f2c; }
+        .card-title { padding: 8px; font-size: 0.85rem; font-weight: bold; }
         video {
             width: 100%;
             border-radius: 12px;
@@ -40,63 +42,107 @@
             display: none;
             background: #000;
         }
+        #debug-box {
+            background-color: #2c1515;
+            border: 1px solid #ff4444;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #ff9999;
+            display: none;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
 
-    <h1>🍿 Mi Cine en Casa IPTV</h1>
+    <h1>🍿 HACHETV STREAM</h1>
+    <div class="subtitle">[ MINI APP REPRODUCTOR ]</div>
     
+    <!-- Caja de depuración en pantalla -->
+    <div id="debug-box"></div>
+
     <!-- Reproductor de Video principal -->
     <video id="video-player" controls></video>
 
     <!-- Grid de Películas -->
     <div id="catalog-grid" class="grid">
-        <p style="grid-column: span 2; text-align: center;">Cargando películas desde la nube...</p>
+        <p id="loading-text" style="grid-column: span 2; text-align: center; font-family: monospace; color: #8892b0;">
+            ⚡ Conectando con Internet Archive...
+        </p>
     </div>
 
     <script>
-        // Inicializar Telegram WebApp
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Abre la Mini App en pantalla completa automáticamente
+        // Muestra cualquier error de JavaScript directamente en la pantalla de la Mini App
+        window.onerror = function(message, source, lineno, colno, error) {
+            const debugBox = document.getElementById("debug-box");
+            debugBox.style.display = "block";
+            debugBox.innerHTML = `🚨 <b>Error de código:</b> ${message}<br>En línea: ${lineno}`;
+            return false;
+        };
 
-        const playlistUrl =const playlistUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://archive.org/download/hachetv-peliculas/peliculas_archive.m3u");
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Conexión segura usando el proxy rápido corsproxy.io
+        const rawM3uUrl = "https://archive.org/download/hachetv-peliculas/peliculas_archive.m3u";
+        const playlistUrl = "https://corsproxy.io/?" + encodeURIComponent(rawM3uUrl);
+        
         const grid = document.getElementById("catalog-grid");
         const player = document.getElementById("video-player");
+        const debugBox = document.getElementById("debug-box");
 
-        // Función para parsear tu lista M3U generada por el bot
         async function loadIPTV() {
             try {
                 const response = await fetch(playlistUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status} - No se pudo descargar el archivo M3U`);
+                }
+                
                 const text = await response.text();
+                
+                if (!text.includes("#EXTM3U")) {
+                    throw new Error("El archivo descargado no tiene formato de lista M3U.");
+                }
+
                 const lines = text.split("\n");
+                grid.innerHTML = ""; // Quitar el texto de cargando
                 
-                grid.innerHTML = ""; // Limpiar cargando...
-                
-                let currentItem = {};
+                let currentItem = null;
+                let count = 0;
                 
                 for (let i = 0; i < lines.length; i++) {
                     const line = lines[i].trim();
                     if (line.startsWith("#EXTINF:")) {
-                        // Extraer logo de TMDB
                         const logoMatch = line.match(/tvg-logo="([^"]+)"/);
-                        const logo = logoMatch ? logoMatch[1] : "https://via.placeholder.com/500x750?text=Sin+Portada";
+                        const logo = (logoMatch && logoMatch[1]) ? logoMatch[1] : "https://via.placeholder.com/500x750?text=Sin+Portada";
                         
-                        // Extraer Nombre de la película
                         const commaIndex = line.lastIndexOf(",");
                         const title = commaIndex !== -1 ? line.substring(commaIndex + 1) : "Película sin título";
                         
                         currentItem = { title, logo };
-                    } else if (line.startsWith("http")) {
+                    } else if (line.startsWith("http") && currentItem !== null) {
                         currentItem.url = line;
                         createMovieCard(currentItem);
+                        count++;
+                        currentItem = null;
                     }
                 }
+
+                if (count === 0) {
+                    grid.innerHTML = `<p style="grid-column: span 2; text-align: center; color: #ffcc00; font-family: monospace;">⚠️ Tu lista M3U está vacía en Archive o no tiene películas asociadas.</p>`;
+                }
+
             } catch (err) {
-                grid.innerHTML = `<p style="grid-column: span 2; color: #ff7b72;">Fallo al cargar catálogo: ${err.message}</p>`;
+                debugBox.style.display = "block";
+                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Recuerda mandar el comando <code>/m3u</code> en tu bot de Telegram para asegurarte de que el archivo exista en tu Item de Archive.org.`;
+                document.getElementById("loading-text").innerText = "Fallo en la conexión.";
             }
         }
 
-        // Crear las tarjetas visuales de las películas
         function createMovieCard(movie) {
             const card = document.createElement("div");
             card.className = "card";
@@ -108,12 +154,11 @@
             grid.appendChild(card);
         }
 
-        // Función para reproducir el video en el player web
         function playMovie(url) {
             player.style.display = "block";
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
-            if (Hls.isSupported() && url.endsWith(".m3u8")) {
+            if (Hls.isSupported() && (url.endsWith(".m3u8") || url.includes("m3u8"))) {
                 const hls = new Hls();
                 hls.loadSource(url);
                 hls.attachMedia(player);
@@ -121,13 +166,11 @@
                     player.play();
                 });
             } else {
-                // Para MP4 directo de Internet Archive
                 player.src = url;
                 player.play();
             }
         }
 
-        // Cargar al iniciar
         loadIPTV();
     </script>
 </body>
