@@ -70,7 +70,7 @@
     <!-- Grid de Películas -->
     <div id="catalog-grid" class="grid">
         <p id="loading-text" style="grid-column: span 2; text-align: center; font-family: monospace; color: #8892b0;">
-            ⚡ Conectando con Internet Archive...
+            ⚡ Conectando de forma segura con Internet Archive...
         </p>
     </div>
 
@@ -86,25 +86,44 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        // Conexión segura usando el proxy rápido corsproxy.io
-      const playlistUrl = "https://archive.org/download/hachetv-peliculas/peliculas_archive.m3u";
-        
+        const rawM3uUrl = "https://ia801802.us.archive.org/31/items/hachetv-peliculas/peliculas_archive.m3u";
         const grid = document.getElementById("catalog-grid");
         const player = document.getElementById("video-player");
         const debugBox = document.getElementById("debug-box");
 
+        // Motor de consulta JSONP para saltar de forma definitiva el bloqueo CORS/403
+        function fetchWithJsonp(url) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'allorigins_' + Math.round(100000 * Math.random());
+                
+                // Definir la función global temporal para recibir los datos
+                window[callbackName] = function(data) {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    resolve(data.contents);
+                };
+
+                const script = document.createElement('script');
+                // AllOrigins nos empaqueta el archivo de texto M3U dentro de una llamada JavaScript
+                script.src = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}&callback=${callbackName}`;
+                
+                script.onerror = () => {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    reject(new Error("La conexión de seguridad JSONP ha fallado."));
+                };
+
+                document.body.appendChild(script);
+            });
+        }
+
         async function loadIPTV() {
             try {
-                const response = await fetch(playlistUrl);
+                // Hacer la llamada segura usando JSONP
+                const text = await fetchWithJsonp(rawM3uUrl);
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status} - No se pudo descargar el archivo M3U`);
-                }
-                
-                const text = await response.text();
-                
-                if (!text.includes("#EXTM3U")) {
-                    throw new Error("El archivo descargado no tiene formato de lista M3U.");
+                if (!text || !text.includes("#EXTM3U")) {
+                    throw new Error("El archivo no tiene el formato de lista M3U o está vacío.");
                 }
 
                 const lines = text.split("\n");
@@ -137,7 +156,7 @@
 
             } catch (err) {
                 debugBox.style.display = "block";
-                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Recuerda mandar el comando <code>/m3u</code> en tu bot de Telegram para asegurarte de que el archivo exista en tu Item de Archive.org.`;
+                debugBox.innerHTML = `❌ <b>Fallo al cargar catálogo:</b> ${err.message}<br><br>💡 Asegúrate de que el bot haya subido el archivo a Internet Archive con éxito.`;
                 document.getElementById("loading-text").innerText = "Fallo en la conexión.";
             }
         }
